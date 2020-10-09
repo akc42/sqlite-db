@@ -25,7 +25,7 @@
   const debug = require('debug')('database');
 
   const Database = require('better-sqlite3');
-  const root = require('app-root-path');
+  const root = require('app-root-path').toString(); 
   const dbfilename = path.resolve(root,process.env.DATABASE_DB_DIR, process.env.DATABASE_DB);
   let db;
   try {
