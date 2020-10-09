@@ -1,0 +1,28 @@
+{
+  "name": "@akc42/server-utils",
+  "version": "1.0.0",
+  "description": "A Set of Utilities to use on the Server Side of a Project",
+  "main": "utils.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/akc42/server-utils.git"
+  },
+  "keywords": [
+    "utilities",
+    "server"
+  ],
+  "author": "Alan Chandler",
+  "license": "GPL-3.0-or-later",
+  "bugs": {
+    "url": "https://github.com/akc42/server-utils/issues"
+  },
+  "homepage": "https://github.com/akc42/server-utils#readme",
+  "dependencies": {
+    "better-sqlite3": "^7.1.1",
+    "chalk": "^4.1.0",
+    "debug": "^4.2.0"
+  }
+}
