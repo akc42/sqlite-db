@@ -23,3 +23,12 @@ with `new Responder(response);` and the resultant object has three methods;
 - `end` signifies the end of stream.  Any attempt to call the other two methods after this has been called will throw an error.
 
 `version` provides a promise that ultimately resolves to an object which has two fields.  `version` which is the version string and `year` which is the copyright year.  It does this with the help of the npm module `app-root-path` read the instructions for that module if it doesn't give the right result for you. The project root is where either the `.git` directory exists (in which case `version` will ask git for the version and calculate the copyright year from the last git log entry) or wgere a `release.info` file is sitting (in which case `version` will expect that to contain a version string and have a modification time from which the copyright year can be derived). 
+
+These can either be installed all together
+```
+const {logger,database,version,Responder} = require('@akc42/server-utils');
+```
+or individually
+```
+const logger = require('@akc42/server-utils/logger');
+```
