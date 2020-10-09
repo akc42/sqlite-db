@@ -57,8 +57,8 @@
 
   function logger(client,level, ...messages) {
     if (process.env.LOG_NONE === undefined) {
-      if (process.env.LOG_NO_DATE === undefined) logLine += new Date().toISOString() + ': ';
       let logLine = '';
+      if (process.env.LOG_NO_DATE === undefined) logLine += new Date().toISOString() + ': ';
       let message;
       let logcolor
       if (isIP(client) === 0 ) {
