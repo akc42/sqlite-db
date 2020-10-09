@@ -25,7 +25,8 @@
   const debug = require('debug')('database');
 
   const Database = require('better-sqlite3');
-  const dbfilename = path.resolve(__dirname, '../',process.env.DATABASE_DB_DIR, process.env.DATABASE_DB);
+  const root = require('app-root-path');
+  const dbfilename = path.resolve(root,process.env.DATABASE_DB_DIR, process.env.DATABASE_DB);
   let db;
   try {
     db = new Database(dbfilename, {fileMustExist:true, timeout: parseInt(process.env.DATABASE_DB_BUSY,10)});

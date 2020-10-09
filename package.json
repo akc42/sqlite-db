@@ -1,6 +1,6 @@
 {
   "name": "@akc42/server-utils",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "A Set of Utilities to use on the Server Side of a Project",
   "main": "utils.js",
   "scripts": {
@@ -21,6 +21,7 @@
   },
   "homepage": "https://github.com/akc42/server-utils#readme",
   "dependencies": {
+    "app-root-path": "^3.0.0",
     "better-sqlite3": "^7.1.1",
     "chalk": "^4.1.0",
     "debug": "^4.2.0"
