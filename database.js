@@ -43,7 +43,7 @@
           Make ourselves a random, pin which I can use as a tokenKey and then write it into the database
 
         */
-        const pin = ('000000' + (Math.floor(Math.random() * 999999)).toString()).slice(-6); //make a new pin 
+        const pin = 'T' + ('000000' + (Math.floor(Math.random() * 999999)).toString()).slice(-6); //make a new pin 
         debug('going to use', pin, 'as our token key');
         db.prepare(`UPDATE settings SET value = ? WHERE name = 'token_key'`).run(pin);
         debug('Successfully updated blank database with script')
