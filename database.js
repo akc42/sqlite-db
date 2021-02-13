@@ -39,13 +39,15 @@
         debug('Opened database - ready to start creating structure');
         const database = fs.readFileSync(path.resolve(root, process.env.DATABASE_INIT_FILE), 'utf8');
         db.exec(database);
-        /*
-          Make ourselves a random, pin which I can use as a tokenKey and then write it into the database
+        if (process.env.DATABASE_DB_PIN === undefined) {
+          /*
+            Make ourselves a random, pin which I can use as a tokenKey and then write it into the database
 
-        */
-        const pin = 'T' + ('000000' + (Math.floor(Math.random() * 999999)).toString()).slice(-6); //make a new pin 
-        debug('going to use', pin, 'as our token key');
-        db.prepare(`UPDATE settings SET value = ? WHERE name = 'token_key'`).run(pin);
+          */
+          const pin = 'T' + ('000000' + (Math.floor(Math.random() * 999999)).toString()).slice(-6); //make a new pin 
+          debug('going to use', pin, 'as our token key');
+          db.prepare(`UPDATE settings SET value = ? WHERE name = 'token_key'`).run(pin);
+        }
         debug('Successfully updated blank database with script')
       } catch (e) {
         fs.unlinkSync(dbfilename); //failed to create it. so delete it so we can correct problem and try again.
