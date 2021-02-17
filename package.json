@@ -25,5 +25,6 @@
     "app-root-path": "^3.0.0",
     "better-sqlite3": "^7.1.1",
     "debug": "^4.2.0"
-  }
+  },
+  "devDependencies": {}
 }
