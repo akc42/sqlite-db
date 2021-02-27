@@ -44,9 +44,10 @@
     };
   }
   const COLOURS = {
-    app: chalk.magentaBright,
+    app: chalk.rgb(255, 136, 0).bold, //orange,
     db: chalk.greenBright,
-    api: chalk.redBright,
+    api: chalk.magentaBright,
+    client: chalk.redBright,
     log: chalk.yellowBright,
     mail:chalk.cyanBright,
     //error like have backGround colouring
@@ -55,17 +56,18 @@
     error: chalk.white.bgRed
   };
 
-  function logger(client,level, ...messages) {
+  function logger(ip,level, ...messages) {
     if (process.env.LOG_NONE === undefined) {
       let logLine = '';
       if (process.env.LOG_NO_DATE === undefined) logLine += new Date().toISOString() + ': ';
       let message;
       let logcolor
-      if (isIP(client) === 0 ) {
-        logcolor = client;
+      if (isIP(ip) === 0 ) {
+        logcolor = ip;
         message = level + messages.join(' ');
       } else {
-        logLine += COLOURS['api'](cyrb53(client) + ': ');
+        const client = process.env.LOG_IP_HIDDEN !== undefined ? cyrb53(ip): ip;
+        logLine += COLOURS.client(client + ': ');
         logcolor = level
         message = messages.join(' ');
       }
