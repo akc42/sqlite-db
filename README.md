@@ -1,4 +1,4 @@
-# sqlitedb
+# sqlite-db
 
 
 is a module to open (creating it if it doesn't yet exist from a `database.sql` file).  It uses two environment 

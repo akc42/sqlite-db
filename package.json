@@ -11,7 +11,8 @@
     "url": "git+https://github.com/akc42/sqlite-db.git"
   },
   "keywords": [
-    "utilities",
+    "database",
+    "sqlite",
     "server"
   ],
   "author": "Alan Chandler",
