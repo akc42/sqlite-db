@@ -1,14 +1,14 @@
 {
-  "name": "@akc42/server-utils",
-  "version": "1.1.0",
-  "description": "A Set of Utilities to use on the Server Side of a Project",
-  "main": "utils.js",
+  "name": "@akc42/sqlite-db",
+  "version": "1.0.1",
+  "description": "Support for sqlite database in projects using better-sql",
+  "main": "database.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/akc42/server-utils.git"
+    "url": "git+https://github.com/akc42/sqlite-db.git"
   },
   "keywords": [
     "utilities",
@@ -17,13 +17,12 @@
   "author": "Alan Chandler",
   "license": "GPL-3.0-or-later",
   "bugs": {
-    "url": "https://github.com/akc42/server-utils/issues"
+    "url": "https://github.com/akc42/sqlite-db/issues"
   },
-  "homepage": "https://github.com/akc42/server-utils#readme",
+  "homepage": "https://github.com/akc42/sqlite-db#readme",
   "dependencies": {
     "app-root-path": "^3.0.0",
-    "better-sqlite3": "^7.1.1",
-    "chalk": "^4.1.0",
-    "debug": "^4.2.0"
+    "better-sqlite3": "^7.1.2",
+    "debug": "^4.3.1"
   }
 }
