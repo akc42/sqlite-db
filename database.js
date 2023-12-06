@@ -17,41 +17,35 @@
     You should have received a copy of the GNU General Public License
     along with Meeting.  If not, see <http://www.gnu.org/licenses/>.
 */
-(()=>{
-  'use strict';
-  const path = require('path');
-  const fs = require('fs');
+import Database from 'better-sqlite3';
+import Debug from 'debug';
+import fs from 'node:fs';
 
-  const debug = require('debug')('database');
 
-  const Database = require('better-sqlite3');
-  const root = require('app-root-path').toString(); 
-  const dbfilename = path.resolve(root,process.env.DATABASE_DB_DIR, process.env.DATABASE_DB);
+const debug = Debug('database');
+
+export default function (dbfilename, initfile) {
+
   let db;
+
   try {
-    db = new Database(dbfilename, {fileMustExist:true, timeout: parseInt(process.env.DATABASE_DB_BUSY,10)});
+    db = new Database(dbfilename);
   } catch(e) {
     if (e.code === 'SQLITE_CANTOPEN') {
       //looks like database didn't exist, so we had better make if from scratch
       try {
         debug ('could not open database as it did not exist - so now going to create it');
-        db = new Database(dbfilename, { fileMustExist: false, timeout: parseInt(process.env.DATABASE_DB_BUSY,10) });
+        db = new Database(dbfilename, { fileMustExist: false, timeout: 5000 });
         debug('Opened database - ready to start creating structure');
-        const database = fs.readFileSync(path.resolve(root, process.env.DATABASE_INIT_FILE), 'utf8');
+        const database = fs.readFileSync(initfile, 'utf8');
         db.exec(database);
-        if (process.env.DATABASE_DB_PIN === undefined) {
-          /*
-            Make ourselves a random, pin which I can use as a tokenKey and then write it into the database
-
-          */
-          const pin = 'T' + ('000000' + (Math.floor(Math.random() * 999999)).toString()).slice(-6); //make a new pin 
-          debug('going to use', pin, 'as our token key');
-          db.prepare(`UPDATE settings SET value = ? WHERE name = 'token_key'`).run(pin);
-        }
+        const pin = 'T' + ('000000' + (Math.floor(Math.random() * 999999)).toString()).slice(-6); //make a new pin 
+        debug('going to use', pin, 'as our token key');
+        db.prepare(`UPDATE settings SET value = ? WHERE name = 'token_key'`).run(pin);
         debug('Successfully updated blank database with script')
       } catch (e) {
         fs.unlinkSync(dbfilename); //failed to create it. so delete it so we can correct problem and try again.
-        throw new Error(`Encountered ${e.toString()} error when trying to create ${dbfilename}`)
+        throw new Error(`Encountered ${e.toString()} error when trying to create ${dbfilename} or to initialsize from ${initfile}`)
       }
     } else {
       throw new Error(`Encountered ${e.toString()} error when opening database`);
@@ -59,7 +53,6 @@
   }
 
   db.pragma('foreign_keys = ON');
-  
   process.on('exit', () => db.close());
-  module.exports = db;
-})();
+  return db;
+} 
