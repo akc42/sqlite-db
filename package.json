@@ -1,6 +1,6 @@
 {
   "name": "@akc42/sqlite-db",
-  "version": "2.0.1",
+  "version": "2.0.3",
   "description": "Support for sqlite database in projects using better-sql",
   "main": "database.js",
   "type": "module",
@@ -23,8 +23,7 @@
   },
   "homepage": "https://github.com/akc42/sqlite-db#readme",
   "dependencies": {
-    "@akc42/server-utils": "^2.0.3",
-    "better-sqlite3": "^9.2.2",
-    "debug": "^4.3.4"
+    "better-sqlite3": "^12.2.0",
+    "debug": "^4.4.3"
   }
 }
