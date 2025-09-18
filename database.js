@@ -21,14 +21,11 @@ import Database from 'better-sqlite3';
 import Debug from 'debug';
 import fs from 'node:fs';
 
-
 const debug = Debug('database');
 let db;
 
-export default function (dbfilename, initfile) {
-
+export default function (dbfilename, initdir) {
   if (!db) {
-
     try {
       db = new Database(dbfilename);
     } catch(e) {
@@ -52,7 +49,44 @@ export default function (dbfilename, initfile) {
         throw new Error(`Encountered ${e.toString()} error when opening database`);
       }
     }
-
+    /*
+      now database is open - see if we need to check for a version
+    */
+    if (typeof process.env.DATABASE_DB_VERSION !== 'undefined') {
+      // check there is a settings table
+      const dbSettingsTable = db.prepare(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'settings'`).pluck().get();
+      if (dbSettingsTable > 0) {
+        //read version to see if it is up to date
+        const dbVersion = db.prepare(`SELECT value FROM settings WHERE name = 'version'`).pluck().get();
+        const requiredVersion = parseInt(process.env.DATABASE_DB_VERSION,10);
+        debug('database is at version ', dbVersion, ' we require ', requiredVersion);
+        if (dbVersion !== requiredVersion) {
+          if (dbVersion > requiredVersion) throw new Error('Setting Version in Database higher than required version');
+          db.pragma('foreign_keys = OFF');
+          const upgradeVersions = db.transaction(() => {
+            for (let version = dbVersion; version < requiredVersion; version++) {
+              if (fs.existsSync(path.resolve(initdir, `pre-upgrade_${version}.sql`))) {
+                debug('do pre upgrade on version', version)
+                //if there is a site specific update we need to do before running upgrade do it
+                const update = fs.readFileSync(path.resolve(initdir, `pre-upgrade_${version}.sql`), { encoding: 'utf8' });
+                db.exec(update);
+              }
+              debug('do upgrade on version', version)
+              const update = fs.readFileSync(path.resolve(initdir, `upgrade_${version}.sql`),{ encoding: 'utf8' });
+              db.exec(update);
+              if (fs.existsSync(path.resolve(initdir,`post-upgrade_${version}.sql`))) {
+                debug('do post upgrade on version', version);
+                //if there is a site specific update we need to do after running upgrade do it
+                const update = fs.readFileSync(path.resolve(initdir, `post-upgrade_${version}.sql`), { encoding: 'utf8' });
+                db.exec(update);
+              }
+            }
+          });
+          upgradeVersions.exclusive();
+        }
+      }
+    }
+    db.exec('VACUUM');
     db.pragma('foreign_keys = ON');
     process.on('exit', () => {
       let tmp = db;
