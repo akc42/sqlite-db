@@ -20,6 +20,7 @@
 import Database from 'better-sqlite3';
 import Debug from 'debug';
 import fs from 'node:fs';
+import path from 'node:path';
 
 const debug = Debug('database');
 let db;
