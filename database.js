@@ -36,7 +36,7 @@ export default function (dbfilename, initdir) {
           debug ('could not open database as it did not exist - so now going to create it');
           db = new Database(dbfilename, { fileMustExist: false, timeout: 5000 });
           debug('Opened database - ready to start creating structure');
-          const database = fs.readFileSync(initfile, 'utf8');
+          const database = fs.readFileSync(path.resolve(initdir, 'database.sql'), 'utf8');
           db.exec(database);
           const pin = 'T' + ('000000' + (Math.floor(Math.random() * 999999)).toString()).slice(-6); //make a new pin 
           debug('going to use', pin, 'as our token key');
