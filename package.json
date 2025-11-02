@@ -1,6 +1,6 @@
 {
   "name": "@akc42/sqlite-db",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "description": "Support for sqlite database in projects using better-sql",
   "main": "database.js",
   "type": "module",
