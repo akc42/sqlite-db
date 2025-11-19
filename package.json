@@ -1,7 +1,7 @@
 {
   "name": "@akc42/sqlite-db",
-  "version": "2.1.2",
-  "description": "Support for sqlite database in projects using better-sql",
+  "version": "3.0.0",
+  "description": "Support for sqlite database in projects using built in node:sqlite but will enhancements",
   "main": "database.js",
   "type": "module",
   "scripts": {
@@ -23,7 +23,8 @@
   },
   "homepage": "https://github.com/akc42/sqlite-db#readme",
   "dependencies": {
-    "better-sqlite3": "^12.2.0",
-    "debug": "^4.4.3"
+    "chalk": "^5.3.0",
+    "debug": "^4.4.3",
+    "supports-color": "^10.2.2"
   }
 }

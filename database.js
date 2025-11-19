@@ -17,83 +17,263 @@
     You should have received a copy of the GNU General Public License
     along with Sqlite-db.  If not, see <http://www.gnu.org/licenses/>.
 */
-import Database from 'better-sqlite3';
-import Debug from 'debug';
-import fs from 'node:fs';
+import { DatabaseSync} from 'node:sqlite';
+import fs from 'node:fs/promises';
 import path from 'node:path';
+import Debug from 'debug';
+import EventEmitter from 'node:events';
+import {randomBytes} from "node:crypto";
 
-const debug = Debug('database');
-let db;
+const secretKey = Buffer.from(randomBytes(20)).toString('hex');
 
-export default function (dbfilename, initdir) {
-  if (!db) {
-    try {
-      db = new Database(dbfilename);
-    } catch(e) {
-      if (e.code === 'SQLITE_CANTOPEN') {
-        //looks like database didn't exist, so we had better make if from scratch
-        try {
-          debug ('could not open database as it did not exist - so now going to create it');
-          db = new Database(dbfilename, { fileMustExist: false, timeout: 5000 });
-          debug('Opened database - ready to start creating structure');
-          const database = fs.readFileSync(path.resolve(initdir, 'database.sql'), 'utf8');
-          db.exec(database);
-          const pin = 'T' + ('000000' + (Math.floor(Math.random() * 999999)).toString()).slice(-6); //make a new pin 
-          debug('going to use', pin, 'as our token key');
-          db.prepare(`UPDATE settings SET value = ? WHERE name = 'token_key'`).run(pin);
-          debug('Successfully updated blank database with script')
-        } catch (e) {
-          fs.unlinkSync(dbfilename); //failed to create it. so delete it so we can correct problem and try again.
-          throw new Error(`Encountered ${e.toString()} error when trying to create ${dbfilename} or to initialsize from ${initfile}`)
-        }
-      } else {
-        throw new Error(`Encountered ${e.toString()} error when opening database`);
-      }
+const debug = Debug('sqlite-db');
+
+
+
+/*
+
+  Environment variables used
+  
+  SQLITE_DB_DIR=/app/db                    Directory within Container to find the database files
+  SQLITE_DB_INITDIR=/app/server/db-init    Directory within Container to find the database initiation files and the upgrade,downgrade 
+  SQLITE_DB_NAME                           Name of the initial database to be opened (others can be opened with Open Database)
+  SQLITE_DB_POOL_MIN_DB=2                  Put a connection in the pool instead of closing it if pool size is less than this
+  SQLITE_DB_POOL_MAX_DB=100                Stop and wait before opening any more connections
+  SQLITE_DB_VERSION
+*/
+const databases = new Map();  //This is a map, between database name (full filename) and and an array of connections that are no longer in use but are still open.
+const openDBs = new Set();  
+
+const poolMin = Number(process.env.SQLITE_DB_OPEN_MIN);
+const poolMax = Number(process.env.SQLITE_DB_CONNECTION_MAX);
+
+let maxConnections = 1;  //just avoids a message on startup when the very first connection is made
+let currentConnections = 0;
+let shuttingDown = false;
+
+const overPoolLimitQueue = [];
+
+async function getConnectionPermission() {
+  return new Promise(resolve => { //make a resolver for the promise and either queue it or resolve it
+    currentConnections++;
+    if (currentConnections > maxConnections) {
+      maxConnections = currentConnections;
+      logger('db', `Database Connections new maximum size of ${currentConnections}`);
     }
-    /*
-      now database is open - see if we need to check for a version
-    */
-    if (typeof process.env.DATABASE_DB_VERSION !== 'undefined') {
-      // check there is a settings table
-      const dbSettingsTable = db.prepare(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'settings'`).pluck().get();
-      if (dbSettingsTable > 0) {
-        //read version to see if it is up to date
-        const dbVersion = db.prepare(`SELECT value FROM settings WHERE name = 'version'`).pluck().get();
-        const requiredVersion = parseInt(process.env.DATABASE_DB_VERSION,10);
-        debug('database is at version ', dbVersion, ' we require ', requiredVersion);
-        if (dbVersion !== requiredVersion) {
-          if (dbVersion > requiredVersion) throw new Error('Setting Version in Database higher than required version');
-          db.pragma('foreign_keys = OFF');
-          const upgradeVersions = db.transaction(() => {
-            for (let version = dbVersion; version < requiredVersion; version++) {
-              if (fs.existsSync(path.resolve(initdir, `pre-upgrade_${version}.sql`))) {
-                debug('do pre upgrade on version', version)
-                //if there is a site specific update we need to do before running upgrade do it
-                const update = fs.readFileSync(path.resolve(initdir, `pre-upgrade_${version}.sql`), { encoding: 'utf8' });
-                db.exec(update);
-              }
-              debug('do upgrade on version', version)
-              const update = fs.readFileSync(path.resolve(initdir, `upgrade_${version}.sql`),{ encoding: 'utf8' });
-              db.exec(update);
-              if (fs.existsSync(path.resolve(initdir,`post-upgrade_${version}.sql`))) {
-                debug('do post upgrade on version', version);
-                //if there is a site specific update we need to do after running upgrade do it
-                const update = fs.readFileSync(path.resolve(initdir, `post-upgrade_${version}.sql`), { encoding: 'utf8' });
-                db.exec(update);
-              }
-            }
-          });
-          upgradeVersions.exclusive();
-        }
-      }
+    if (currentConnections > poolMax) {
+      overPoolLimitQueue.push(resolve);
+    } else {
+      resolve();
     }
-    db.exec('VACUUM');
-    db.pragma('foreign_keys = ON');
-    process.on('exit', () => {
-      let tmp = db;
-      db = null;
-      tmp.close()
-    });
+  }) 
+};
+
+function releaseConnection() {
+  currentConnections--;
+  let headroom = poolMax - currentConnections;
+  while (overPoolLimitQueue.length > 0 && headroom > 0) {
+    const resolver = overPoolLimitQueue.shift();
+    headroom--;
+    resolver(); //resolve the earliest person who requested a "getConnectionPermission"
   }
-  return db;
-} 
+}
+class DatabaseError extends Error {
+  constructor(message) {
+    super('Database Error: ' + message);
+  }
+}
+
+class Database extends EventEmitter {
+  constructor(key,cbv, dn,rv ) {
+    if(key !== secretKey) throw new DatabaseError('Cannot construct Database class directly');
+    super()
+    this._callingdb = cbv
+    this.requiredVersion = rv;
+    this.dbfile = path.resolve(process.env.SQLITE_DB_DIR,dn + '.db');
+    if (databases.has(this.dbfile)) {
+      const pool = databases.get(this.dbfile);
+      this._db = pool.shift();
+      if (pool.length > 0) {
+        databases.set(this.dbfile, pool);
+      } else {
+        databases.delete(this.dbfile);
+      }
+    } else {
+      this._db  = new DatabaseSync(this.dbfile);
+    }
+    this._tagstore = this._db.createTagStore();
+    if (this._callingdb === null) {
+      //we are the orignal
+      this._functionMap = new Map();
+    } else {
+      const fm = this.functionMap; //we are not the original, but the getter will find it.
+      for (const f of fm) this._db.function(f[0], f[1][0], f[1],[1]); //apply all the function maps to this instance
+    }
+    
+  }
+  static async build(creatingdb,dn,rv = 0) {
+    const dbName = dn
+    const requiredVersion = rv;
+    await getConnectionPermission();
+    const db =  new Database(secretKey,creatingdb ,dbName, requiredVersion)
+    openDBs.add(db)
+    return db;
+  }
+  all(strings,...keys) {
+    if (!this.isOpen) throw new DatabaseError('Not Open')
+    return this._tagstore.all(strings, ...keys);
+  }
+  close(skipVacuum) {
+    debug('Database closing with Tag Store Size', this._tagstore.size(), 'Capacity', this._tagstore.capacity);
+    if (this.isOpen) {
+      if (!skipVacuum) this.exec('VACUUM');
+      this.emit('dbclose',this)
+      
+    }
+    let pool;
+    if (databases.has(this.dbFile)) {
+        pool = databases.get(this.dbfile);
+    } else {
+      pool = []; //no entry yet so make one
+    }
+    if (pool.length < poolMin && !shuttingDown) {
+      pool.pop({...this._db});
+      databases.set(this.dbfile,pool);
+    } else {
+      this._db.close();
+      releaseConnection();
+    }
+    this._db = null
+    openDBs.delete(this);
+  }
+  exec(sql) {
+    if (!this.isOpen) throw new DatabaseError('Not Open')
+    this._db.exec(sql);
+  }
+  function(name,options,callback) {
+    if (!this.isOpen) throw new DatabaseError('Not Open')
+    if (this._callingdb !== null) throw new DatabaseError('cannot add a function inside a transaction');
+    this._db.function(name,options,callback);
+    this._functionMap.set(name,[options, callback])
+  }
+  get(strings,...keys) {
+    if (!this.isOpen) throw new DatabaseError('Not Open')
+    return this._tagstore.get(strings, ...keys);
+  }
+  get functionMap() {
+    if (this._callingdb === null) {
+      return this._functionMap;
+    } else {
+      return this._callingdb.functionMap;
+    }
+  }
+  get isOpen() {
+    if (this._db === null) return false;
+    return this._db.isOpen;
+  }
+  iterate(strings,...keys) {
+    if (!this.isOpen) throw new DatabaseError('Not Open')
+    return this._tagstore.iterate(strings, ...keys);
+  }
+  prepare(sql) {
+    if (!this.isOpen) throw new DatabaseError('Not Open')
+    return this._db.prepare(sql)
+  }
+  run(strings, ...keys) {
+    if (!this.isOpen) throw new DatabaseError('Not Open')
+    this._tagstore.run(strings, ...keys)
+  }
+  async transaction(callback) {
+    if (!this.isOpen) throw new DatabaseError('Not Open')
+    let returnValue;
+    this._db.exec('BEGIN TRANSACTION');
+    try {
+      returnValue = await callback(this);
+      this._db.exec('COMMIT');
+    } catch (e) {
+      this._db.exec('ROLLBACK');
+      throw e;
+    }
+    return returnValue
+  }
+  async transactionAsync(callback) {
+    if (!this.isOpen) throw new DatabaseError('Not Open')
+    debug('Async Transaction Started')
+    let returnValue;
+    const db = Database.build(this._callingdb,this.dbfile);
+    openDBs.add(db);
+    db.exec('BEGIN TRANSACTION');
+    try {
+      returnValue = await callback(db);
+      db.exec('COMMIT');
+    } catch (e) {
+      db.exec('ROLLBACK');
+      db.close(true)
+      throw e;
+    } finally {
+      db.close(true)
+    }
+    debug('Async Transaction Ended');
+    return returnValue
+      
+  }
+}
+
+
+export const openDatabase = async(dn,rv = 0) => {
+  
+  const dbName = dn
+  const requiredVersion = rv;
+  const db = await Database.build(null,dbName,requiredVersion);
+  try {
+    await db.transaction(async (tdb) => {
+      tdb.exec('PRAGMA foreign_keys = OFF;');
+      const {count} = tdb.get`SELECT COUNT(*) as count FROM pragma_table_list() where schema = 'main'`;
+      if (count <= 1) {
+        const dbInitFile =  path.resolve(process.env.SQLITE_DB_INITDIR, `database-${dbName}.sql`);
+        //we haven't set up the database yet.  time to do so
+        const database = await fs.readFile(dbInitFile,{ encoding: 'utf8' });
+        tdb.exec(database);
+
+      }
+      if (Number.isInteger(requiredVersion) && requiredVersion > 0) {
+        const {name} = tdb.get`SELECT name from pragma_table_list() WHERE name = 'Settings'`??{name:null};
+        if (name !== null) {
+          const {value:dbVersion} = tdb.get`SELECT value FROM Settings WHERE name = ${'db-version'}`??{value:0};
+          if (dbVersion !== requiredVersion) {
+            if (dbVersion > requiredVersion) throw new DatabaseError(`Version of Database (${dbVersion})is higher than Required (${requiredVersion})`);   
+            for (let version = dbVersion; version < requiredVersion; version++) {
+              const upgradeFile = path.resolve(process.env.SQLITE_DB_INITDIR, `upgrade-${dbName}_${version}.sql`) ;
+              let update;         
+              try {
+                update = await fs.readFile(upgradeFile, { encoding: 'utf8' });
+              } catch (e) {
+                throw new DatabaseError(`Missing version file ${upgradeFile} doesn't exist`);
+              }
+              tdb.exec(update);
+              tdb.run`UPDATE Settings SET value = ${version + 1} WHERE name = ${'db-version'}`
+            }   
+          }
+        }      
+      }
+      tdb.exec('PRAGMA foreign_keys = ON;');
+    });
+      
+  } catch(e) {
+    logger('error', e.stack);
+    db.close();
+  }
+  return db; 
+};
+
+process.on('exit',() => {
+  shuttingDown = true;
+  for (const pool of databases) {
+    for(const db of pool[1]) db.close();  
+  }
+  for (const db of openDBs) db.close(true);
+});
+
+const sqlite = await openDatabase(process.env.SQLITE_DB_NAME, Number(process.env.SQLITE_DB_VERSION));
+export default sqlite;
+
