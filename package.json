@@ -23,8 +23,6 @@
   },
   "homepage": "https://github.com/akc42/sqlite-db#readme",
   "dependencies": {
-    "chalk": "^5.3.0",
-    "debug": "^4.4.3",
-    "supports-color": "^10.2.2"
+    "chalk": "^5.3.0"
   }
 }

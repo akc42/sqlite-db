@@ -17,29 +17,77 @@
     You should have received a copy of the GNU General Public License
     along with Sqlite-db.  If not, see <http://www.gnu.org/licenses/>.
 */
+/**
+@licence
+    Copyright (c) 2020-2025 Alan Chandler, all rights reserved
+
+    This file is part of Sqlite-db
+
+    Sqlite-db is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Sqlite-db is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Sqlite-db.  If not, see <http://www.gnu.org/licenses/>.
+*/
 import { DatabaseSync} from 'node:sqlite';
-import fs from 'node:fs/promises';
 import path from 'node:path';
-import Debug from 'debug';
 import EventEmitter from 'node:events';
 import {randomBytes} from "node:crypto";
+import chalk from 'chalk';
+
+let loggeractive = true;
+let debugactive = false;
+
+const sqlcolour = chalk.hex('#ff651d');
+const sqltopic = chalk.hex('#b613a2');
+
+function debug(topic, ...args) {
+  const shortdate = (typeof topic !== 'string');
+  if (shortdate && !loggeractive ) return;
+  if (!shortdate && !debugactive) return; 
+  const message = args.reduce((cum, arg) => {
+      if (arg === undefined) return cum;
+      return `${cum} ${arg}`.trim();
+    },'');
+  const logdate = new Date();
+  const displaydate = `${logdate.getFullYear()}-${('00' + (logdate.getMonth() + 1)).slice(-2)}-${('00' + logdate.getDate()).slice(-2)}`;
+  const displaytime = `${('00' + logdate.getHours()).slice(-2)}:${('00' + logdate.getMinutes()).slice(-2)}:${('00' + logdate.getSeconds()).slice(-2)}.${
+    ('000' + logdate.getMilliseconds()).slice(-3)}`;
+  const d = chalk.blueBright(`${displaydate} ${shortdate? displaytime.slice(0,-7): displaytime}`);
+  const t = shortdate? '': sqltopic(`(${topic})`);
+  const m = ' ' + (shortdate ? chalk.greenBright(message) : sqlcolour(message));
+  console.log(`${d} ${t}${m}`);
+}
+
+
+function debugTemplate(type,strings,...keys) {
+  if (!debugactive) return;
+  let result = strings[0];
+  for (let i = 1; i < strings.length; i++) {
+    result += '${' + keys[i-1] + '}' + strings[i];
+  }
+  
+  debug(type,result);
+}
 
 const secretKey = Buffer.from(randomBytes(20)).toString('hex');
-
-const debug = Debug('sqlite-db');
-
-
 
 /*
 
   Environment variables used
   
-  SQLITE_DB_DIR=/app/db                    Directory within Container to find the database files
-  SQLITE_DB_INITDIR=/app/server/db-init    Directory within Container to find the database initiation files and the upgrade,downgrade 
+  SQLITE_DB_EXT                            Extention for database ASSUMES '.db' If not present 
   SQLITE_DB_NAME                           Name of the initial database to be opened (others can be opened with Open Database)
   SQLITE_DB_POOL_MIN_DB=2                  Put a connection in the pool instead of closing it if pool size is less than this
   SQLITE_DB_POOL_MAX_DB=100                Stop and wait before opening any more connections
-  SQLITE_DB_VERSION
+
 */
 const databases = new Map();  //This is a map, between database name (full filename) and and an array of connections that are no longer in use but are still open.
 const openDBs = new Set();  
@@ -51,6 +99,8 @@ let maxConnections = 1;  //just avoids a message on startup when the very first 
 let currentConnections = 0;
 let shuttingDown = false;
 
+let maxTagStoreSize = 5; //not interested in knowing until its that large
+
 const overPoolLimitQueue = [];
 
 async function getConnectionPermission() {
@@ -58,7 +108,7 @@ async function getConnectionPermission() {
     currentConnections++;
     if (currentConnections > maxConnections) {
       maxConnections = currentConnections;
-      logger('db', `Database Connections new maximum size of ${currentConnections}`);
+      debug(true,'Database Connections new maximum size of', currentConnections); 
     }
     if (currentConnections > poolMax) {
       overPoolLimitQueue.push(resolve);
@@ -77,18 +127,19 @@ function releaseConnection() {
     resolver(); //resolve the earliest person who requested a "getConnectionPermission"
   }
 }
-class DatabaseError extends Error {
+export class DatabaseError extends Error {
   constructor(message) {
     super('Database Error: ' + message);
   }
 }
 
+
+
 class Database extends EventEmitter {
-  constructor(key,cbv, dn,rv ) {
+  constructor(key,cbv, dn ) {
     if(key !== secretKey) throw new DatabaseError('Cannot construct Database class directly');
     super()
     this._callingdb = cbv
-    this.requiredVersion = rv;
     this.dbfile = path.resolve(process.env.SQLITE_DB_DIR,dn + '.db');
     if (databases.has(this.dbfile)) {
       const pool = databases.get(this.dbfile);
@@ -111,35 +162,43 @@ class Database extends EventEmitter {
     }
     
   }
-  static async build(creatingdb,dn,rv = 0) {
+  static async build(creatingdb,dn) {
     const dbName = dn
-    const requiredVersion = rv;
     await getConnectionPermission();
-    const db =  new Database(secretKey,creatingdb ,dbName, requiredVersion)
+    const db =  new Database(secretKey,creatingdb ,dbName)
     openDBs.add(db)
     return db;
   }
   all(strings,...keys) {
     if (!this.isOpen) throw new DatabaseError('Not Open')
+    debugTemplate('all',strings, ...keys);
     return this._tagstore.all(strings, ...keys);
   }
   close(skipVacuum) {
-    debug('Database closing with Tag Store Size', this._tagstore.size(), 'Capacity', this._tagstore.capacity);
+    
     if (this.isOpen) {
-      if (!skipVacuum) this.exec('VACUUM');
-      this.emit('dbclose',this)
+      if (this.isTransaction) this.exec('ROLLBACK;');
+      if (!skipVacuum) this.exec('VACUUM;');
+      this.exec('PRAGMA main.wal_checkpoint(TRUNCATE);');
+      this.emit('dbclose',this);
       
     }
     let pool;
-    if (databases.has(this.dbFile)) {
+    if (databases.has(this.dbfile)) {
         pool = databases.get(this.dbfile);
     } else {
       pool = []; //no entry yet so make one
     }
     if (pool.length < poolMin && !shuttingDown) {
-      pool.pop({...this._db});
+      pool.push(this._db);
+
       databases.set(this.dbfile,pool);
     } else {
+      const tgSize = this._tagstore.size();
+      if (tgSize > maxTagStoreSize) {
+        maxTagStoreSize = tgSize;
+        debug(true,'Database closing with Tag Store Size',tgSize , 'Capacity', this._tagstore.capacity);
+      }
       this._db.close();
       releaseConnection();
     }
@@ -148,6 +207,7 @@ class Database extends EventEmitter {
   }
   exec(sql) {
     if (!this.isOpen) throw new DatabaseError('Not Open')
+    debug('exec', sql);
     this._db.exec(sql);
   }
   function(name,options,callback) {
@@ -158,6 +218,7 @@ class Database extends EventEmitter {
   }
   get(strings,...keys) {
     if (!this.isOpen) throw new DatabaseError('Not Open')
+    debugTemplate('get',strings, ...keys);
     return this._tagstore.get(strings, ...keys);
   }
   get functionMap() {
@@ -168,19 +229,41 @@ class Database extends EventEmitter {
     }
   }
   get isOpen() {
-    if (this._db === null) return false;
-    return this._db.isOpen;
+    if (this._db) return this._db.isOpen;
+    return false;
   }
   iterate(strings,...keys) {
     if (!this.isOpen) throw new DatabaseError('Not Open')
+    debugTemplate('iterate',strings, ...keys);
     return this._tagstore.iterate(strings, ...keys);
+  }
+  get isTransaction() {
+    if (this._db ) return this._db.isTransaction;
+    return false;
+  }
+  open() {
+    if (!this.isOpen) {
+      if (databases.has(this.dbfile)) {
+        const pool = databases.get(this.dbfile);
+        this._db = pool.shift();
+        if (pool.length > 0) {
+          databases.set(this.dbfile, pool);
+        } else {
+          databases.delete(this.dbfile);
+        }
+      } else {
+        this._db  = new DatabaseSync(this.dbfile);
+      }
+    }
   }
   prepare(sql) {
     if (!this.isOpen) throw new DatabaseError('Not Open')
+    debug('prepare',sql);
     return this._db.prepare(sql)
   }
   run(strings, ...keys) {
     if (!this.isOpen) throw new DatabaseError('Not Open')
+    debugTemplate('run',strings, ...keys);
     this._tagstore.run(strings, ...keys)
   }
   async transaction(callback) {
@@ -219,61 +302,35 @@ class Database extends EventEmitter {
   }
 }
 
-
-export const openDatabase = async(dn,rv = 0) => {
-  
-  const dbName = dn
-  const requiredVersion = rv;
-  const db = await Database.build(null,dbName,requiredVersion);
-  try {
-    await db.transaction(async (tdb) => {
-      tdb.exec('PRAGMA foreign_keys = OFF;');
-      const {count} = tdb.get`SELECT COUNT(*) as count FROM pragma_table_list() where schema = 'main'`;
-      if (count <= 1) {
-        const dbInitFile =  path.resolve(process.env.SQLITE_DB_INITDIR, `database-${dbName}.sql`);
-        //we haven't set up the database yet.  time to do so
-        const database = await fs.readFile(dbInitFile,{ encoding: 'utf8' });
-        tdb.exec(database);
-
-      }
-      if (Number.isInteger(requiredVersion) && requiredVersion > 0) {
-        const {name} = tdb.get`SELECT name from pragma_table_list() WHERE name = 'Settings'`??{name:null};
-        if (name !== null) {
-          const {value:dbVersion} = tdb.get`SELECT value FROM Settings WHERE name = ${'db-version'}`??{value:0};
-          if (dbVersion !== requiredVersion) {
-            if (dbVersion > requiredVersion) throw new DatabaseError(`Version of Database (${dbVersion})is higher than Required (${requiredVersion})`);   
-            for (let version = dbVersion; version < requiredVersion; version++) {
-              const upgradeFile = path.resolve(process.env.SQLITE_DB_INITDIR, `upgrade-${dbName}_${version}.sql`) ;
-              let update;         
-              try {
-                update = await fs.readFile(upgradeFile, { encoding: 'utf8' });
-              } catch (e) {
-                throw new DatabaseError(`Missing version file ${upgradeFile} doesn't exist`);
-              }
-              tdb.exec(update);
-              tdb.run`UPDATE Settings SET value = ${version + 1} WHERE name = ${'db-version'}`
-            }   
-          }
-        }      
-      }
-      tdb.exec('PRAGMA foreign_keys = ON;');
-    });
-      
-  } catch(e) {
-    logger('error', e.stack);
-    db.close();
+export function manager(command, param) {
+  switch (command.toLowerCase()) {
+    case 'logger':
+      loggeractive = param;
+      break;
+    case 'debug':
+      debugactive = param;
+      break;
   }
+}
+
+
+export const openDatabase = async(dn) => {
+  const dbName = dn;
+  const db = await Database.build(null,dbName);
+  db.exec('PRAGMA journal_mode=WAL;');
   return db; 
 };
 
 process.on('exit',() => {
   shuttingDown = true;
+  debug(true,'The maximum TagStore Size was',maxTagStoreSize);
   for (const pool of databases) {
-    for(const db of pool[1]) db.close();  
+    for(const db of pool[1]) db?.close();  
   }
-  for (const db of openDBs) db.close(true);
+  for (const db of openDBs) db?.close(true);
 });
 
-const sqlite = await openDatabase(process.env.SQLITE_DB_NAME, Number(process.env.SQLITE_DB_VERSION));
+const sqlite = await openDatabase(process.env.SQLITE_DB_NAME);
+
 export default sqlite;
 
