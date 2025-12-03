@@ -150,7 +150,7 @@ class Database extends EventEmitter {
         databases.delete(this.dbfile);
       }
     } else {
-      this._db  = new DatabaseSync(this.dbfile, {timeout: process.env.SQLITE_DB_BUSY_TIMEOUT??30000});
+      this._db  = new DatabaseSync(this.dbfile, {timeout: Number(process.env.SQLITE_DB_BUSY_TIMEOUT??5000)});
     }
     this._tagstore = this._db.createTagStore();
     if (this._callingdb === null) {
@@ -252,7 +252,7 @@ class Database extends EventEmitter {
           databases.delete(this.dbfile);
         }
       } else {
-        this._db  = new DatabaseSync(this.dbfile, {timeout: process.env.SQLITE_DB_BUSY_TIMEOUT??30000});
+        this._db  = new DatabaseSync(this.dbfile, {timeout: Number(process.env.SQLITE_DB_BUSY_TIMEOUT??30000)});
       }
     }
   }
