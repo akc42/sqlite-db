@@ -140,7 +140,7 @@ class Database extends EventEmitter {
     if(key !== secretKey) throw new DatabaseError('Cannot construct Database class directly');
     super()
     this._callingdb = cbv
-    this.dbfile = path.resolve(process.env.SQLITE_DB_DIR,dn + '.db');
+    this.dbfile = path.resolve(process.env.SQLITE_DB_DIR,dn);
     if (databases.has(this.dbfile)) {
       const pool = databases.get(this.dbfile);
       this._db = pool.shift();
@@ -149,8 +149,9 @@ class Database extends EventEmitter {
       } else {
         databases.delete(this.dbfile);
       }
+      releaseConnection();  //we release it, because build got one increased the number, but in fact we haven't
     } else {
-      this._db  = new DatabaseSync(this.dbfile, {timeout: Number(process.env.SQLITE_DB_BUSY_TIMEOUT??5000)});
+      this._db  = new DatabaseSync(this.dbfile + '.db', {timeout: Number(process.env.SQLITE_DB_BUSY_TIMEOUT??5000)});
     }
     this._tagstore = this._db.createTagStore();
     if (this._callingdb === null) {
@@ -199,7 +200,7 @@ class Database extends EventEmitter {
         maxTagStoreSize = tgSize;
         debug(true,'Database closing with Tag Store Size',tgSize , 'Capacity', this._tagstore.capacity);
       }
-      this._db.close();
+      this._db?.close();
       releaseConnection();
     }
     this._db = null
@@ -252,7 +253,7 @@ class Database extends EventEmitter {
           databases.delete(this.dbfile);
         }
       } else {
-        this._db  = new DatabaseSync(this.dbfile, {timeout: Number(process.env.SQLITE_DB_BUSY_TIMEOUT??30000)});
+        this._db  = new DatabaseSync(this.dbfile + '.db', {timeout: Number(process.env.SQLITE_DB_BUSY_TIMEOUT??5000)});
       }
     }
   }
@@ -266,12 +267,12 @@ class Database extends EventEmitter {
     debugTemplate('run',strings, ...keys);
     this._tagstore.run(strings, ...keys)
   }
-  async transaction(callback) {
+  transaction(callback) {
     if (!this.isOpen) throw new DatabaseError('Not Open')
     let returnValue;
     this._db.exec('BEGIN TRANSACTION');
     try {
-      returnValue = await callback(this);
+      returnValue = callback(this);
       this._db.exec('COMMIT');
     } catch (e) {
       this._db.exec('ROLLBACK');
@@ -283,7 +284,7 @@ class Database extends EventEmitter {
     if (!this.isOpen) throw new DatabaseError('Not Open')
     debug('Async Transaction Started')
     let returnValue;
-    const db = Database.build(this._callingdb,this.dbfile);
+    const db = await Database.build(this,this.dbfile);
     openDBs.add(db);
     db.exec('BEGIN TRANSACTION');
     try {
