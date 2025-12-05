@@ -176,7 +176,7 @@ class Database extends EventEmitter {
     return this._tagstore.all(strings, ...keys);
   }
   close(skipVacuum) {
-    
+    if (this._db === null) return;
     if (this.isOpen) {
       if (this.isTransaction) this.exec('ROLLBACK;');
       if (!skipVacuum) this.exec('VACUUM;');
