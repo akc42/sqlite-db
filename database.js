@@ -36,7 +36,7 @@
     You should have received a copy of the GNU General Public License
     along with Sqlite-db.  If not, see <http://www.gnu.org/licenses/>.
 */
-import { DatabaseSync} from 'node:sqlite';
+import { DatabaseSync, backup} from 'node:sqlite';
 import path from 'node:path';
 import EventEmitter from 'node:events';
 import {randomBytes} from "node:crypto";
@@ -78,6 +78,7 @@ function debugTemplate(type,strings,...keys) {
 }
 
 const secretKey = Buffer.from(randomBytes(20)).toString('hex');
+const backupAuthKey = Buffer.from(randomBytes(20)).toString('hex');
 
 /*
 
@@ -175,10 +176,14 @@ class Database extends EventEmitter {
     debugTemplate('all',strings, ...keys);
     return this._tagstore.all(strings, ...keys);
   }
+  async backup(dbBackFile, key) {
+    if (key !== backupAuthKey) throw new DatabaseError('Unauthorised backup attempt');
+    return backup(this._db,dbBackFile);
+  }
   close(skipVacuum) {
     if (this._db === null) return;
     if (this.isOpen) {
-      if (this.isTransaction) this.exec('ROLLBACK;');
+      if (this.inTransaction) this.exec('ROLLBACK;');
       if (!skipVacuum) this.exec('VACUUM;');
       this.exec('PRAGMA main.wal_checkpoint(TRUNCATE);');
       this.emit('dbclose',this);
@@ -238,7 +243,7 @@ class Database extends EventEmitter {
     debugTemplate('iterate',strings, ...keys);
     return this._tagstore.iterate(strings, ...keys);
   }
-  get isTransaction() {
+  get inTransaction() {
     if (this._db ) return this._db.isTransaction;
     return false;
   }
@@ -321,6 +326,12 @@ export const openDatabase = async(dn) => {
   db.exec('PRAGMA journal_mode=WAL;');
   return db; 
 };
+
+export function backupAuthRequest() {
+  debug(true, 'Backup Authorisation has been requested');
+  return backupAuthKey;
+
+}
 
 process.on('exit',() => {
   shuttingDown = true;

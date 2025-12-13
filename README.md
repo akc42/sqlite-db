@@ -24,26 +24,9 @@ NOTE: we will already have set up to close all connections for this database on 
 
 All modules that do the import like above, even with a different variable name, end up with the same database connection, so can share user defined functions etc.
 
-If any module wishes to work with another database in parallel, then instead they should import like this:-
+## Database methods.
 
-```javascript
-import {default as mydatabase, openDatabase} from '@AKC42/sqlite-db';
-```
-which then also provides the ***openDatabase*** function to open additional databases.  It is called so:-
-
-```javascript
-const myseconddatabase = await openDatabase(<name>);
-```
-where <name> is the equivelent of the SQLITE_DB_NAME environment variable. Note this is not an attachment to the original connection.  If you want to attach do
-
-```javascript
-mydatabase.exec(`ATTACH ${path.resolve(process.env.SQLITE_DB_DIR, 'attach.db')}`);
-```
-The database returned by ***openDatabase*** is in `wal` mode.
-
-## Database functions.
-
-In this section wer are going to assume that you originally did the following
+In this section we are going to assume that you originally did the following
 
 ```javascript
 import db from '@AKC42/sqlite-db';
@@ -141,7 +124,7 @@ if (db.isOpen) {
 
 ```
 
-This actually shows seven separate things
+This actually shows seven separate methods being used on the database object being returnd
 
 ***db.isOpen*** is a read only state set by the module showing the state of the database. It will of course normally be
                 open after initialisation but can indicate to other modules that the database has been closed
@@ -161,7 +144,7 @@ This actually shows seven separate things
                 callback throws an error then ROLLBACK is called and the database is closed before the error is
                 repeated.
                 
-                In normal circumstances it is important with this transaction that all activity within it is **synchonous** because other work from other modules could get embroiled within this transaction. Nevertheless it must always be `await`ed.  However, this module is designed to work in an envirnoment that is primarily asynchonous, and so an alternative is provided, ***db.transactionAsync***.  It is called as follows:-
+                In normal circumstances it is important with this transaction that all activity within it is **synchonous** because other work from other modules could get embroiled within this transaction, and also that the callback would appear complete when it is not.  However, this whole module is designed to work in an envirnoment that is primarily asynchonous, and so an alternative is provided, ***db.transactionAsync***.  It is called as follows:-
 
 ```javascript
 import { setTimeout } from 'node:timers/promises';
@@ -176,14 +159,21 @@ const return = await db.transactionAsync(async (db) => {
 console.log('Return : ', return);
 // Return : result
 ```
-                Behind the scenes, this function gets a new (dedicated) connection to the database before calling BEGIN TRANSACTION and does a COMMIT or ROLLBACK dependant of whether the callback threw and error.  Each database <databasename> has its own pool of open connections.  The size of that pool is controlled by by two more environment variables (shown with typical values):-
+                Behind the scenes, this function gets a new (dedicated) connection to the database before calling BEGIN TRANSACTION and does a COMMIT or
+                ROLLBACK dependant of whether the callback threw and error.  The callback itself is assumed to return a promise which is awaited.  Each
+                database on which this `transactionAsync` has its own pool of open connections we can be used to start the transaction and will be returned
+                when the transaction ends.  The size of that pool is controlled by by two more environment variables (shown with typical values):-
 
   SQLITE_DB_POOL_MIN_DB=4                   Put a connection in the pool instead of closing it if the individual <databasename> pool size is less than
                                             this value
 
   SQLITE_DB_POOL_MAX_DB=100                 Stop and wait before opening any more connections across *all* databases              
 
-                Before handing a new connection to the transaction callback, any user defined functions, defined at the time the first connection that is returned was made, are copied over to this new connection.  NOTE: trying to create a new user defined function inside an async transaction will thow an error.
+                Before handing a new connection to the transaction callback, any user defined functions, defined at the time the first connection that is returned was made, are copied over to this new connection.  NOTE: trying to create a new user defined function inside an async transaction will throw an error.
+
+
+
+
 
 ***dbclose**    Is an event emitted by this module when the database has been closed.  This is how we trigger the
                 downgrade action. As well as manually closing the database, the module also detects `process.exit` and
@@ -194,10 +184,46 @@ console.log('Return : ', return);
 
                 The process exit shutdown tells it to skip Vacuum on close.
 
+There are two additional methods so far not discussed.
 
-The module extends the Error class with a `DatabaseError` type.  This is exported should it be needed.
+***db.inTransaction***  This is set true if a transaction is currently active on the current connection (it does not
+                know the state of other connections).
 
-Lastly debug/logging information is controlled by another `export`ed function, `manage`.  By default only the point at
+***db.backup*** This is an async method which backs up the database. It is called with two parameters thus:-
+
+                ```javascript
+                await db.backup(backupfilename, authkey);
+                ```
+                The `backupfilename` should be the name of the backup file to be produced, including directory information.  `authkey` is a special key
+                that must be provided which is obtained by calling a separate function (see below).  This is just extra protection against performing it unintentially.
+
+## Additional Functions.
+
+If any module wishes to work with another database in parallel, then instead they should import this module like this:-
+
+```javascript
+import {default as mydatabase, openDatabase} from '@AKC42/sqlite-db';
+```
+which then also provides the ***openDatabase*** function to open additional databases.  It is called so:-
+
+```javascript
+const myseconddatabase = await openDatabase(<name>);
+```
+where <name> is the equivelent of the SQLITE_DB_NAME environment variable. Note this is not an attachment to the original connection.  If you want to attach do
+
+```javascript
+mydatabase.exec(`ATTACH ${path.resolve(process.env.SQLITE_DB_DIR, 'attach.db')}`);
+```
+The database returned by ***openDatabase*** is in `wal` mode.
+
+
+The module extends the Error class with a ***DatabaseError*** type.  This is exported should it be needed.
+
+As mentioned above, in order to backup a database an authorisation key is needed.  This is obtained by calling
+***backupAuthRequest** without any parameters.  It returns the key that has to be used with the `db.backup` method
+described above.
+
+Lastly debug/logging information is controlled by another function, ***manage***.  By default only the point at
 which a new "max connections" is reached, and when the database is actually closed (not just handed back to the pool)
 the tagstore at that point.  Finally on final shutdown, the maximum size of any tagstore.  However, these messages can
 be switched off, and independantly an output of all the requests with SQL in them can be output.  The `manage` function
