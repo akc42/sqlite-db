@@ -96,11 +96,12 @@ const openDBs = new Set();
 const poolMin = Number(process.env.SQLITE_DB_OPEN_MIN);
 const poolMax = Number(process.env.SQLITE_DB_CONNECTION_MAX);
 
-let maxConnections = 1;  //just avoids a message on startup when the very first connection is made
+let maxConnections = 5;  //just avoids a message on startup when the very first connection is made
 let currentConnections = 0;
 let shuttingDown = false;
 
 let maxTagStoreSize = 5; //not interested in knowing until its that large
+let newMaxStoreSize = false;
 
 const overPoolLimitQueue = [];
 
@@ -204,6 +205,7 @@ class Database extends EventEmitter {
       if (tgSize > maxTagStoreSize) {
         maxTagStoreSize = tgSize;
         debug(true,'Database closing with Tag Store Size',tgSize , 'Capacity', this._tagstore.capacity);
+        newMaxStoreSize = true;
       }
       this._db?.close();
       releaseConnection();
@@ -335,7 +337,7 @@ export function backupAuthRequest() {
 
 process.on('exit',() => {
   shuttingDown = true;
-  debug(true,'The maximum TagStore Size was',maxTagStoreSize);
+  if (newMaxStoreSize) debug(true,'The maximum TagStore Size was',maxTagStoreSize);
   for (const pool of databases) {
     for(const db of pool[1]) db?.close();  
   }
