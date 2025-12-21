@@ -161,7 +161,7 @@ class Database extends EventEmitter {
       this._functionMap = new Map();
     } else {
       const fm = this.functionMap; //we are not the original, but the getter will find it.
-      for (const f of fm) this._db.function(f[0], f[1][0], f[1],[1]); //apply all the function maps to this instance
+      for (const f of fm) this._db.function(f[0], f[1][0], f[1][1]); //apply all the function maps to this instance
     }
     
   }
@@ -292,7 +292,6 @@ class Database extends EventEmitter {
     debug('Async Transaction Started')
     let returnValue;
     const db = await Database.build(this,this.dbfile);
-    openDBs.add(db);
     db.exec('BEGIN TRANSACTION');
     try {
       returnValue = await callback(db);
@@ -301,9 +300,9 @@ class Database extends EventEmitter {
       db.exec('ROLLBACK');
       db.close(true)
       throw e;
-    } finally {
-      db.close(true)
-    }
+    } 
+    db.close(true)
+    
     debug('Async Transaction Ended');
     return returnValue
       
@@ -318,6 +317,8 @@ export function manager(command, param) {
     case 'debug':
       debugactive = param;
       break;
+    case 'stats':
+      return {maxConnections,maxTagStoreSize};
   }
 }
 
