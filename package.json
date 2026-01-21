@@ -1,6 +1,6 @@
 {
   "name": "@akc42/sqlite-db",
-  "version": "3.0.6",
+  "version": "3.0.8",
   "description": "Support for sqlite database in projects using built in node:sqlite but will enhancements",
   "main": "database.js",
   "type": "module",

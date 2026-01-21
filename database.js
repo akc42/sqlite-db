@@ -17,25 +17,6 @@
     You should have received a copy of the GNU General Public License
     along with Sqlite-db.  If not, see <http://www.gnu.org/licenses/>.
 */
-/**
-@licence
-    Copyright (c) 2020-2025 Alan Chandler, all rights reserved
-
-    This file is part of Sqlite-db
-
-    Sqlite-db is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    Sqlite-db is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with Sqlite-db.  If not, see <http://www.gnu.org/licenses/>.
-*/
 import { DatabaseSync, backup} from 'node:sqlite';
 import path from 'node:path';
 import EventEmitter from 'node:events';
@@ -216,7 +197,7 @@ class Database extends EventEmitter {
   exec(sql) {
     if (!this.isOpen) throw new DatabaseError('Not Open')
     debug('exec', sql);
-    this._db.exec(sql);
+    return this._db.exec(sql);
   }
   function(name,options,callback) {
     if (!this.isOpen) throw new DatabaseError('Not Open')
@@ -272,7 +253,7 @@ class Database extends EventEmitter {
   run(strings, ...keys) {
     if (!this.isOpen) throw new DatabaseError('Not Open')
     debugTemplate('run',strings, ...keys);
-    this._tagstore.run(strings, ...keys)
+    return this._tagstore.run(strings, ...keys)
   }
   transaction(callback) {
     if (!this.isOpen) throw new DatabaseError('Not Open')
