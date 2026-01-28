@@ -179,12 +179,13 @@ console.log('Return : ', return);
                 downgrade action. As well as manually closing the database, the module also detects `process.exit` and
                 closes all the databases that are open.
 
-***db.close***  Allows you to close the database. What that call doesn't show is that the close function automatically
-                runs `db.exec('VACUUM')` unless you explicitly tell it not to by passing a `true` parameter to the call.
+***db.close***  Allows you to close the database. What that call doesn't show is that if you pass a `true` parameter to
+                the call it will perform a `VACUUM` on the database and truncate the "wal" file.  NOTE *dbclose* is
+                omitted before the VACUUM is performed.
 
-                The process exit shutdown tells it to skip Vacuum on close.
+                The process exit shutdown tells it to to **not** `VACUUM` on close.
 
-There are two additional methods so far not discussed.
+There are three additional methods so far not discussed.
 
 ***db.inTransaction***  This is set true if a transaction is currently active on the current connection (it does not
                 know the state of other connections).
@@ -196,6 +197,8 @@ There are two additional methods so far not discussed.
                 ```
                 The `backupfilename` should be the name of the backup file to be produced, including directory information.  `authkey` is a special key
                 that must be provided which is obtained by calling a separate function (see below).  This is just extra protection against performing it unintentially.
+***db.enableDefensive*** If you wish to change the database from its default mode of `defensive` then call this function
+                with the new mode you wish the database to run in. 
 
 ## Additional Functions.
 

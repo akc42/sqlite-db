@@ -134,7 +134,7 @@ class Database extends EventEmitter {
       }
       releaseConnection();  //we release it, because build got one increased the number, but in fact we haven't
     } else {
-      this._db  = new DatabaseSync(this.dbfile + '.db', {timeout: Number(process.env.SQLITE_DB_BUSY_TIMEOUT??5000)});
+      this._db  = new DatabaseSync(this.dbfile + '.db', {timeout: Number(process.env.SQLITE_DB_BUSY_TIMEOUT??5000),defensive:true});
     }
     this._tagstore = this._db.createTagStore();
     if (this._callingdb === null) {
@@ -162,13 +162,17 @@ class Database extends EventEmitter {
     if (key !== backupAuthKey) throw new DatabaseError('Unauthorised backup attempt');
     return backup(this._db,dbBackFile);
   }
-  close(skipVacuum) {
+  close(doVacuum) {
     if (this._db === null) return;
     if (this.isOpen) {
+      this.emit('dbclose',this); //do this first so any final transaction update can get done
       if (this.inTransaction) this.exec('ROLLBACK;');
-      if (!skipVacuum) this.exec('VACUUM;');
-      this.exec('PRAGMA main.wal_checkpoint(TRUNCATE);');
-      this.emit('dbclose',this);
+      if (doVacuum) {
+        debug('vaccum', 'requested vacuum');
+        this.exec('VACUUM;');
+        this.exec('PRAGMA main.wal_checkpoint(TRUNCATE);');
+      }
+
       
     }
     let pool;
@@ -193,6 +197,11 @@ class Database extends EventEmitter {
     }
     this._db = null
     openDBs.delete(this);
+  }
+  enableDefensive(mode) { //true to set defensive mode on, false to set it off
+    debug('defensive','Enable Defensive Called with Mode', mode, 'in Transaction', this.inTransaction);
+    if (this.inTransaction) throw new DatabaseError('Cannot change defensive mode whilst in a transaction');
+    this._db.enableDefensive(mode);
   }
   exec(sql) {
     if (!this.isOpen) throw new DatabaseError('Not Open')
@@ -241,7 +250,7 @@ class Database extends EventEmitter {
           databases.delete(this.dbfile);
         }
       } else {
-        this._db  = new DatabaseSync(this.dbfile + '.db', {timeout: Number(process.env.SQLITE_DB_BUSY_TIMEOUT??5000)});
+        this._db  = new DatabaseSync(this.dbfile + '.db', {timeout: Number(process.env.SQLITE_DB_BUSY_TIMEOUT??5000), defensive: true});
       }
     }
   }
@@ -270,7 +279,7 @@ class Database extends EventEmitter {
   }
   async transactionAsync(callback) {
     if (!this.isOpen) throw new DatabaseError('Not Open')
-    debug('Async Transaction Started')
+    debug('transaction','Async Transaction Started')
     let returnValue;
     const db = await Database.build(this,this.dbfile);
     db.exec('BEGIN TRANSACTION');
@@ -284,7 +293,7 @@ class Database extends EventEmitter {
     } 
     db.close(true)
     
-    debug('Async Transaction Ended');
+    debug('transaction','Async Transaction Ended');
     return returnValue
       
   }
@@ -312,7 +321,7 @@ export const openDatabase = async(dn) => {
 };
 
 export function backupAuthRequest() {
-  debug(true, 'Backup Authorisation has been requested');
+  debug('backup', 'Backup Authorisation has been requested');
   return backupAuthKey;
 
 }
@@ -323,7 +332,7 @@ process.on('exit',() => {
   for (const pool of databases) {
     for(const db of pool[1]) db?.close();  
   }
-  for (const db of openDBs) db?.close(true);
+  for (const db of openDBs) db?.close();
 });
 
 const sqlite = await openDatabase(process.env.SQLITE_DB_NAME);
