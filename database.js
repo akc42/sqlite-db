@@ -288,10 +288,10 @@ class Database extends EventEmitter {
       db.exec('COMMIT');
     } catch (e) {
       db.exec('ROLLBACK');
-      db.close(true)
+      db.close()
       throw e;
     } 
-    db.close(true)
+    db.close()
     
     debug('transaction','Async Transaction Ended');
     return returnValue
