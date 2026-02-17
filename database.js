@@ -186,7 +186,7 @@ class Database extends EventEmitter {
 
       databases.set(this.dbfile,pool);
     } else {
-      const tgSize = this._tagstore.size();
+      const tgSize = this._tagstore.size;
       if (tgSize > maxTagStoreSize) {
         maxTagStoreSize = tgSize;
         debug(true,'Database closing with Tag Store Size',tgSize , 'Capacity', this._tagstore.capacity);
